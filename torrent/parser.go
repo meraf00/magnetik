@@ -6,6 +6,18 @@ import (
 	"unicode"
 )
 
+type Info struct {
+	Length      int
+	Name        string
+	PieceLength int
+	Pieces      string
+}
+
+type MetaInfo struct {
+	Announce string
+	Info     Info
+}
+
 func decodeString(str string) (string, int, error) {
 	var firstColonIndex int
 
@@ -112,4 +124,32 @@ func DecodeBencode(bencodedString string) (interface{}, int, error) {
 	} else {
 		return "", 0, fmt.Errorf("only strings are supported at the moment")
 	}
+}
+
+func LoadMetaInfo(bencodedString string) (*MetaInfo, error) {
+	decoded, _, decodingError := DecodeBencode(bencodedString)
+
+	if decodingError != nil {
+		return nil, decodingError
+	}
+
+	metaInfo, ok := decoded.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("invalid meta info, corrupt torrent file")
+	}
+
+	info, ok := metaInfo["info"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("invalid info, corrupt torrent file")
+	}
+
+	return &MetaInfo{
+		Announce: metaInfo["announce"].(string),
+		Info: Info{
+			Length:      info["length"].(int),
+			Name:        info["name"].(string),
+			PieceLength: info["piece length"].(int),
+			Pieces:      info["pieces"].(string),
+		},
+	}, nil
 }
