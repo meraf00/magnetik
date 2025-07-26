@@ -55,13 +55,13 @@ func decodeList(str string) (interface{}, int, error) {
 	list := []interface{}{}
 
 	for currentIndex < len(str)-2 {
+		if str[currentIndex] == 'e' {
+			return list, currentIndex + 1, nil
+		}
+
 		decoded, consumedChars, err := DecodeBencode(str[currentIndex:])
 
 		if err != nil {
-			// reached list end
-			if str[currentIndex] == 'e' {
-				return list, currentIndex + 1, nil
-			}
 			return nil, 0, err
 		}
 
@@ -78,24 +78,23 @@ func decodeDict(str string) (interface{}, int, error) {
 	var currentIndex int = 1
 
 	for currentIndex < len(str)-2 {
+		if str[currentIndex] == 'e' {
+			return dict, currentIndex + 1, nil
+		}
 
 		key, keyLength, keyErr := decodeString(str[currentIndex:])
 		if keyErr != nil {
-			// reached dict end
-			if str[currentIndex] == 'e' {
-				return dict, currentIndex + 1, nil
-			}
 			return nil, 0, fmt.Errorf("error parsing dict key")
 		}
 		currentIndex += keyLength
 
-		decoded, valueLength, err := DecodeBencode(str[currentIndex:])
+		value, valueLength, err := DecodeBencode(str[currentIndex:])
 		if err != nil {
 			return nil, 0, fmt.Errorf("error parsing value for key %s %v", key, err)
 		}
 		currentIndex += valueLength
 
-		dict[key] = decoded
+		dict[key] = value
 	}
 
 	return dict, currentIndex + 1, nil
