@@ -58,6 +58,10 @@ func decodeList(str string) (interface{}, int, error) {
 		decoded, consumedChars, err := DecodeBencode(str[currentIndex:])
 
 		if err != nil {
+			// reached list end
+			if str[currentIndex] == 'e' {
+				return list, currentIndex + 1, nil
+			}
 			return nil, 0, err
 		}
 
@@ -68,6 +72,35 @@ func decodeList(str string) (interface{}, int, error) {
 	return list, currentIndex + 1, nil
 }
 
+func decodeDict(str string) (interface{}, int, error) {
+	dict := make(map[string]interface{})
+
+	var currentIndex int = 1
+
+	for currentIndex < len(str)-2 {
+
+		key, keyLength, keyErr := decodeString(str[currentIndex:])
+		if keyErr != nil {
+			// reached dict end
+			if str[currentIndex] == 'e' {
+				return dict, currentIndex + 1, nil
+			}
+			return nil, 0, fmt.Errorf("error parsing dict key")
+		}
+		currentIndex += keyLength
+
+		decoded, valueLength, err := DecodeBencode(str[currentIndex:])
+		if err != nil {
+			return nil, 0, fmt.Errorf("error parsing value for key %s %v", key, err)
+		}
+		currentIndex += valueLength
+
+		dict[key] = decoded
+	}
+
+	return dict, currentIndex + 1, nil
+}
+
 func DecodeBencode(bencodedString string) (interface{}, int, error) {
 	if unicode.IsDigit(rune(bencodedString[0])) {
 		return decodeString(bencodedString)
@@ -75,6 +108,8 @@ func DecodeBencode(bencodedString string) (interface{}, int, error) {
 		return decodeInteger(bencodedString)
 	} else if bencodedString[0] == 'l' {
 		return decodeList(bencodedString)
+	} else if bencodedString[0] == 'd' {
+		return decodeDict(bencodedString)
 	} else {
 		return "", 0, fmt.Errorf("only strings are supported at the moment")
 	}
