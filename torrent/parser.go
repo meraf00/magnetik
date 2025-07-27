@@ -2,26 +2,39 @@ package torrent
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"unicode"
 )
 
 type Info struct {
-	Length      int
-	Name        string
-	PieceLength int
-	Pieces      string
+	Length      int    `json:"length"`
+	Name        string `json:"name"`
+	PieceLength int    `json:"piece length"`
+	Pieces      []byte `json:"pieces"`
 }
 
 type MetaInfo struct {
-	Announce string
-	Info     Info
+	Announce string `json:"announce"`
+	Info     Info   `json:"info"`
 }
 
-func decodeString(str string) (string, int, error) {
+func (m *MetaInfo) ToMap() map[string]any {
+	return map[string]any{
+		"announce": m.Announce,
+		"info": map[string]any{
+			"length":       m.Info.Length,
+			"name":         m.Info.Name,
+			"piece length": m.Info.PieceLength,
+			"pieces":       m.Info.Pieces,
+		},
+	}
+}
+
+func decodeString(str []byte) ([]byte, int, error) {
 	var firstColonIndex int
 
-	for i := 0; i < len(str); i++ {
+	for i := range str {
 		if str[i] == ':' {
 			firstColonIndex = i
 			break
@@ -30,19 +43,19 @@ func decodeString(str string) (string, int, error) {
 
 	lengthStr := str[:firstColonIndex]
 
-	length, err := strconv.Atoi(lengthStr)
+	length, err := strconv.Atoi(string(lengthStr))
 	if err != nil {
-		return "", 0, err
+		return nil, 0, err
 	}
 
 	if length >= len(str) {
-		return "", 0, fmt.Errorf("bencode string too short")
+		return nil, 0, fmt.Errorf("bencode string too short")
 	}
 
 	return str[firstColonIndex+1 : firstColonIndex+1+length], firstColonIndex + length + 1, nil
 }
 
-func decodeInteger(str string) (int, int, error) {
+func decodeInteger(str []byte) (int, int, error) {
 	endIndex := len(str) - 1
 
 	for i := 0; i < len(str); i++ {
@@ -52,7 +65,7 @@ func decodeInteger(str string) (int, int, error) {
 		}
 	}
 
-	number, err := strconv.Atoi(str[1:endIndex])
+	number, err := strconv.Atoi(string(str[1:endIndex]))
 
 	if err != nil {
 		return 0, 0, err
@@ -61,7 +74,7 @@ func decodeInteger(str string) (int, int, error) {
 	return number, endIndex + 1, nil
 }
 
-func decodeList(str string) (interface{}, int, error) {
+func decodeList(str []byte) (interface{}, int, error) {
 	currentIndex := 1
 
 	list := []interface{}{}
@@ -84,7 +97,7 @@ func decodeList(str string) (interface{}, int, error) {
 	return list, currentIndex + 1, nil
 }
 
-func decodeDict(str string) (interface{}, int, error) {
+func decodeDict(str []byte) (interface{}, int, error) {
 	dict := make(map[string]interface{})
 
 	var currentIndex int = 1
@@ -106,13 +119,13 @@ func decodeDict(str string) (interface{}, int, error) {
 		}
 		currentIndex += valueLength
 
-		dict[key] = value
+		dict[string(key)] = value
 	}
 
 	return dict, currentIndex + 1, nil
 }
 
-func DecodeBencode(bencodedString string) (interface{}, int, error) {
+func DecodeBencode(bencodedString []byte) (any, int, error) {
 	if unicode.IsDigit(rune(bencodedString[0])) {
 		return decodeString(bencodedString)
 	} else if bencodedString[0] == 'i' {
@@ -126,7 +139,64 @@ func DecodeBencode(bencodedString string) (interface{}, int, error) {
 	}
 }
 
-func LoadMetaInfo(bencodedString string) (*MetaInfo, error) {
+func EncodeBencode(obj any) ([]byte, error) {
+	switch obj := obj.(type) {
+	case int:
+		return fmt.Appendf(nil, "i%de", obj), nil
+	case string:
+		return fmt.Appendf(nil, "%d:%s", len(obj), obj), nil
+	case []byte:
+		return fmt.Appendf(nil, "%d:%s", len(obj), obj), nil
+	case []any:
+		encoded := make([]byte, 0)
+		encoded = append(encoded, 'l')
+
+		for _, element := range obj {
+			encodedElement, err := EncodeBencode(element)
+			if err != nil {
+				return nil, err
+			}
+
+			encoded = append(encoded, encodedElement...)
+		}
+
+		encoded = append(encoded, 'e')
+		return encoded, nil
+	case map[string]any:
+		encoded := make([]byte, 0)
+		encoded = append(encoded, 'd')
+
+		keys := make([]string, 0)
+		for key := range obj {
+			keys = append(keys, key)
+		}
+
+		sort.Strings(keys)
+
+		for _, k := range keys {
+			encodedKey, err := EncodeBencode(k)
+			if err != nil {
+				return nil, err
+			}
+
+			encoded = append(encoded, encodedKey...)
+
+			encodedValue, err := EncodeBencode(obj[k])
+			if err != nil {
+				return nil, err
+			}
+
+			encoded = append(encoded, encodedValue...)
+		}
+
+		encoded = append(encoded, 'e')
+		return encoded, nil
+	}
+
+	return nil, fmt.Errorf("error encoding object")
+}
+
+func LoadMetaInfo(bencodedString []byte) (*MetaInfo, error) {
 	decoded, _, decodingError := DecodeBencode(bencodedString)
 
 	if decodingError != nil {
@@ -144,12 +214,32 @@ func LoadMetaInfo(bencodedString string) (*MetaInfo, error) {
 	}
 
 	return &MetaInfo{
-		Announce: metaInfo["announce"].(string),
+		Announce: string(metaInfo["announce"].([]byte)),
 		Info: Info{
 			Length:      info["length"].(int),
-			Name:        info["name"].(string),
+			Name:        string(info["name"].([]byte)),
 			PieceLength: info["piece length"].(int),
-			Pieces:      info["pieces"].(string),
+			Pieces:      info["pieces"].([]byte),
 		},
 	}, nil
+}
+
+func ConvertByteToString(v any) any {
+	switch val := v.(type) {
+	case []byte:
+		return string(val)
+	case map[string]any:
+		m := make(map[string]any)
+		for k, v2 := range val {
+			m[k] = ConvertByteToString(v2)
+		}
+		return m
+	case []any:
+		for i := range val {
+			val[i] = ConvertByteToString(val[i])
+		}
+		return val
+	default:
+		return v
+	}
 }

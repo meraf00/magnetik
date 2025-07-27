@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha1"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -14,13 +15,14 @@ func main() {
 	if command == "decode" {
 		bencodedValue := os.Args[2]
 
-		decoded, _, err := torrent.DecodeBencode(bencodedValue)
+		decoded, _, err := torrent.DecodeBencode([]byte(bencodedValue))
 		if err != nil {
 			fmt.Println(err)
 			return
 		}
 
-		jsonOutput, _ := json.Marshal(decoded)
+		processed := torrent.ConvertByteToString(decoded)
+		jsonOutput, _ := json.Marshal(processed)
 		fmt.Println(string(jsonOutput))
 	} else if command == "info" {
 		filePath := os.Args[2]
@@ -31,13 +33,22 @@ func main() {
 			os.Exit(1)
 		}
 
-		fileInfo, err := torrent.LoadMetaInfo(string(content))
+		fileInfo, err := torrent.LoadMetaInfo(content)
 
 		if err != nil {
 			os.Exit(1)
 		}
 
-		fmt.Printf("Tracker: %s\nLength: %d", fileInfo.Announce, fileInfo.Info.Length)
+		metaInfoDict := fileInfo.ToMap()
+		encoded, err := torrent.EncodeBencode(map[string]any(metaInfoDict["info"].(map[string]any)))
+		if err != nil {
+			fmt.Println("error verifying hash")
+			os.Exit(1)
+		}
+
+		hash := sha1.Sum([]byte(encoded))
+
+		fmt.Printf("Tracker: %s\nLength: %d\nInfo Hash: %x\n", fileInfo.Announce, fileInfo.Info.Length, hash)
 
 	} else {
 		fmt.Println("Unknown command: " + command)
